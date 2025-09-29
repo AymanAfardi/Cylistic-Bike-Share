@@ -1,0 +1,426 @@
+---
+title: "Cyclistic bike share"
+output: html_document
+---
+
+## Business Task
+
+How do annual members and casual riders use Cyclistic bikes differently, and how can this inform a strategy to convert casual riders into members?
+
+# PREPARE
+
+For this analysis, I will use Cyclistic’s historical bike trip data from 2020, made publicly available by Motivate International Inc. under an open license. This dataset contains anonymized ride records, including start and end times, trip duration, day of the week, and user type (casual rider or annual member). No personally identifiable information is included, ensuring compliance with privacy requirements. The data will be downloaded, organized into dedicated folders, and stored in both its original and working formats to preserve integrity. Before analysis, I will review the dataset’s structure, check for missing or inconsistent values, and verify its credibility and completeness. This preparation ensures the data is reliable, well-structured, and ready for cleaning and deeper analysis to answer the business question.
+
+[Click here to view the license](https://divvybikes.com/data-license-agreement)
+
+# PROCESS
+
+The raw cyclistic dataset contains 6 083 510 observations and 13 variables, including ride details such as ride_id, rideable_type, start/end times, station information, geographic coordinates, and rider type (member_casual).
+
+Packages used:
+
+```{r packages, message=FALSE}
+library(readxl)
+library(tidyverse)
+library(ggplot2)
+library(dplyr)
+library(lubridate)
+library(knitr)
+
+```
+
+Loading the datasets to Rstudio:
+
+```{r loading, message=FALSE, include=FALSE}
+cyclistic_202201 <- read.csv("C:/Users/PC GAMING/Desktop/DATA/project/bike_share_navigation08092025/dataset/202201-divvy-tripdata.csv")
+cyclistic_202202 <- read.csv("C:/Users/PC GAMING/Desktop/DATA/project/bike_share_navigation08092025/dataset/202202-divvy-tripdata.csv")
+cyclistic_202203 <- read.csv("C:/Users/PC GAMING/Desktop/DATA/project/bike_share_navigation08092025/dataset/202203-divvy-tripdata.csv")
+
+cyclistic <- bind_rows(cyclistic_202201,
+                       cyclistic_202202,
+                       cyclistic_202203)
+```
+
+The following steps were performed to clean, manipulate, and organize the data:
+
+#### **Data Type Conversion**
+
+-    Converted started_at and ended_at from character to datetime format to allow time based calculations.
+
+-    Ensured ride_id and station IDs remain as character strings to preserve their categorical nature.
+
+#### **Feature Creation**
+
+-    Created a new ride_length column by calculating the time difference between ended_at and started_at in minutes.
+
+-    Added a day_of_week column extracted from started_at to capture the ride’s weekday.
+
+-    Added a month column to group rides by month for seasonal trend analysis.
+
+#### **Data Validation and Filtering**
+
+-    Removed rows with negative or zero ride_length values (invalid data points).
+
+-    Checked for missing values in critical columns (started_at, ended_at, member_casual, station names) and removed or imputed where necessary.
+
+#### **Standardization**
+
+-    Standardized naming in member_casual to ensure consistent lowercase values (“member” and “casual”).
+
+-    Trimmed whitespace and corrected inconsistent naming in start_station_name and end_station_name.
+
+#### **Organization**
+
+-    Ordered columns logically: ride details, station info, coordinates, rider type, and calculated fields.
+
+-    Sorted dataset chronologically by started_at for time-series analysis readiness.
+
+```{r Process, include=FALSE}
+#Process
+##cleaning and manipulating data
+str(cyclistic)
+    cyclistic_clean <- cyclistic %>%
+    ###changing data type to date
+      mutate(
+        started_at = ymd_hms(started_at),
+        ended_at = ymd_hms(ended_at)
+      ) %>%  
+    ###creating new columns
+      ###creating new column to calculate how many minutes each ride took
+      mutate(ride_length = as.numeric(difftime(ended_at,
+                                               started_at,
+                                               units = "mins"))) %>%
+      ###creating day_of_week and month
+      mutate(
+        day_of_week = wday(started_at, label = TRUE, abbr = FALSE), 
+        month = month(started_at, label = TRUE, abbr = FALSE)) %>%
+      ###filtering ride length less than 0
+      filter(ride_length > 0) %>%
+      ###standardizing rider type and station names
+      mutate(
+        member_casual = tolower(trimws(member_casual)),
+        start_station_name = trimws(start_station_name),
+        end_station_name = trimws(end_station_name)
+      ) %>%
+      ###deleting missing values
+      filter(
+        !is.na(started_at),
+        !is.na(ended_at),
+        !is.na(member_casual),
+        !is.na(start_station_name),
+        !is.na(end_station_name)
+      ) %>%
+      ###reordering columns
+      select(
+        ride_id, rideable_type, started_at, ended_at, ride_length,
+        day_of_week, month, start_station_name, start_station_id,
+        end_station_name, end_station_id, start_lat, start_lng, end_lat, end_lng, member_casual
+      ) %>%
+      ###arrange data by rides starting date
+      arrange(started_at)
+    
+      ###renaming columns for more clarity 
+      cyclistic_clean <- cyclistic_clean %>% 
+        rename(bike_type =rideable_type,
+               rider_type =member_casual)
+```
+
+-   The cleaned and processed dataset is now free of invalid values, enriched with calculated fields for deeper analysis, and structured for efficient exploration of differences between casual riders and annual members.
+
+```{r summarizing, paged.print=FALSE}
+str(cyclistic_clean)
+```
+
+# ANALYZE
+
+#### **Descriptive Analysis**
+
+```{r include=FALSE}
+#Analyze
+    ##descriptive analysis
+      ###counting types of riders
+      riders <-
+      cyclistic_clean %>% 
+        group_by(rider_type) %>%
+        summarise(num_riders = n())
+      riders %>% 
+        mutate(num_riders = as.numeric(num_riders))
+      
+      ###counting number of rides by days of the week
+      rides_by_day <- cyclistic_clean %>%
+        group_by(rider_type, day_of_week) %>%
+        summarise(num_rides = n(), .groups = 'drop')
+      rides_by_day %>% 
+        mutate(num_rides = as.numeric(num_rides))
+      
+      ###number of rides in each month
+      rides_by_month <- cyclistic_clean %>%
+        group_by(rider_type, month) %>%
+        summarise(num_rides = n(), .groups = 'drop')
+      rides_by_month %>% 
+        mutate(num_rides = as.numeric(num_rides))
+      
+      ###number of rides by type of riders and bikes
+      bike_type_pref <- cyclistic_clean %>%
+        group_by(rider_type, bike_type) %>%
+        summarise(num_rides = n(), .groups = 'drop')
+      bike_type_pref %>% 
+        mutate(num_rides = as.numeric(num_rides))
+      
+      ###average ride length by rider 
+      avg_ride_length_by_rider <-
+        cyclistic_clean %>%
+        group_by(rider_type) %>%
+        summarise(
+          avg_length = mean(ride_length, na.rm = TRUE),
+          median_length = median(ride_length, na.rm = TRUE),
+          max_length = max(ride_length, na.rm = TRUE)) 
+      
+      ###average ride length by Riders in days
+      avg_ride_lenght_days <-
+        cyclistic_clean %>%
+        group_by(rider_type, day_of_week) %>%
+        summarise(avg_length = round(mean(ride_length, na.rm = TRUE), digits = 2))
+      
+      ###segmenting riders by ride legnth
+      Segm_Riders_byRlegnth <-
+      cyclistic_clean %>%
+        mutate(length_category = case_when(
+          ride_length < 10 ~ "Short (<10 min)",
+          ride_length < 30 ~ "Medium (10-30 min)",
+          TRUE ~ "Long (>30 min)"
+        )) %>%
+        group_by(rider_type, length_category) %>%
+        summarise(num_rides = n(), .groups = "drop")
+```
+
+```{r riders, echo=FALSE, paged.print=TRUE}
+#print(riders)
+kable(riders,
+            col.names = c("Rider Type", "Number of Riders"))
+```
+
+-   the total of riders are 503,393, Member Riders represent 373,588 this means 74,21% of riders are Annual Members, in the other hand, 129,805 are Casual riders making 25,78%.
+
+```{r rides_by_day, echo=FALSE}
+#print(rides_by_day)
+kable(rides_by_day,
+            col.names = c("Rider Type", "Days of the Week", "Number of Rides"))
+```
+
+```{r viz1}
+    rides_by_day %>% 
+      ggplot(mapping = aes(day_of_week, num_rides, fill = rider_type))+
+      geom_bar(stat = "identity",
+               position = "dodge")+
+      facet_wrap(vars(rider_type))+
+      labs(
+        title = "Rides by Days of the Week",
+        x = "",
+        y = "Number of Rides",
+        fill ="Type of Riders"
+      )+
+     # scale_fill_manual(values = c("casual" = ,"mamber" =))+ #add color
+      theme_light() +
+        theme(axis.text.x = element_text(angle = 90))
+
+```
+
+**Interpretation :**
+
+-   This analysis compares ride volumes between casual and member riders across the week. The goal is to uncover behavioral trends that can inform operational planning, marketing strategies, and service optimization.
+
+**for Casual Riders:**
+
+-   days such as Sunday, Saturday, and Monday represent high volume of rides,23 296, 21 588, 21 282. while the rest of the week remains under 20 000 ride, Tuesday with 15 332, Wednesday with 19 552, Thursday with 16 444, Friday with 12 311.
+
+**For Annual Members:**
+
+-   We notice a spike in the number of rides across the week, 61196 in Monday, 64418 in Tuesday, 63349 in Wednesday, 57783 in Thursday. However on Friday(43804 ride) and the weekend the volume of rides declines ,42734 in Sunday, 40295 in Saturday.
+
+**key insights:**
+
+-   Annual members tend to have high number of rides at the beginning of the week, this could be interpreted as our members use bikes daily either to school, work or other places. Casual riders in the other hand have high usage on the weekend and Mondays.
+
+```{r rides_by_month, echo=FALSE}
+#print(rides_by_month)
+kable(rides_by_month,
+            col.names = c("Rider Type", "Month", "Number of Rides"))
+```
+
+```{r viz2}
+ ##Visual_2: Number of Rides by the first Months of 2022
+    rides_by_month %>% 
+      ggplot(aes(month, num_rides, fill = rider_type,  ))+
+      geom_bar(stat = "identity", position = "dodge")+
+      labs(
+        title = "Number of Rides by the first Months of 2022",
+        subtitle = "data from Cyclistic Bike Share 2022 (Q1, Q2, Q3)",
+        x = "",
+        y = "Number of Rides",
+        fill = "Type of Riders")+
+      geom_text(aes(label = num_rides), 
+                position = position_dodge(width = 0.9), 
+                vjust = -0.6, size = 3) +
+      theme_light()
+```
+
+**Interpretation :**
+
+To further our understanding of customer's behavior we broke the volume of rides by months, the above Bar plot shows a massive increase from January to March in both Casual Riders and Annual Members.
+
+-   We notice in January a high volume of rides for Annual Members that amount to 85 248 ride compared to Casual Riders with 18 517. this means Total Rides in January was 103 765, out of which Annual Members represent **82%** and Casual Riders **18%**
+
+-   In February the volume of rides increased by \~**x1.11** for Annual Mambers, from 85 248 to 94 190 ride. for Casual Riders the increase was \~**x1.16** from 18 517 to 21 414.
+
+-   However March has the highest volume of rides for both types of riders, 89 874 for Annual Members 194 150 rides (~**x2.06** from February), 89 874 ride by Casual Riders (\~**x4.20** from February).~
+
+```{r bike_type_pref, echo=FALSE}
+#print(bike_type_pref)
+kable(bike_type_pref,
+            col.names = c("Rider Type", "Bike Type", "Number of Rides"))
+```
+
+```{r viz3}
+  bike_type_pref %>% 
+      ggplot(aes(bike_type, num_rides, fill = rider_type))+
+      geom_bar(stat = "identity", position = "dodge",
+               )+
+      labs(
+        title = "Number of Rides Performed by Bike, Rider Type",
+        subtitle = "data from Cyclistic Bike Share 2022 (Q1, Q2, Q3)",
+        x = "",
+        y = "Number of Rides",
+        fill = "Rider")+
+      theme_minimal() +
+        theme(plot.subtitle = element_text(size = 10))
+
+```
+
+**Interpretation :**
+
+-   Members overwhelmingly prefer **classic bikes**, with nearly four times more rides than casual riders, while both groups show strong adoption of **electric bikes**, though members still dominate. Casual riders rely more heavily on **docked bikes**, suggesting they may value flexibility and accessibility over routine commuting.
+
+-   **Implication:** Marketing should highlight the cost savings and convenience of memberships for frequent electric and classic bike users, while positioning memberships as a smarter alternative for casual riders currently dependent on docked bikes.
+
+```{r avg_ride_length_by_rider, echo=FALSE}
+#print(avg_ride_length_by_rider)
+kable(avg_ride_length_by_rider,
+            digits = 2,
+            col.names = c("Rider Type",
+                          "Average Length",
+                          "Median Length",
+                          "Maximum Length"))
+```
+
+```{r viz4}
+    ##Visual_4:Ride Length Distribution by Rider Type
+     
+     cyclistic_clean %>% 
+       ggplot(mapping = aes(
+         rider_type, ride_length, 
+         fill = rider_type)) +
+       geom_boxplot()+
+       coord_cartesian(ylim = c(0,60))+
+       labs(
+         title = "Ride Length Distribution by Rider Type",
+         x = "Rider Type",
+         y = "Ride Length (minutes)"
+       ) +
+       theme_minimal()
+```
+
+**Interpretation :**
+
+**Median Ride Length:**
+
+-   Casual riders have a median ride length of around 12–13 minutes.
+
+<!-- -->
+
+-   Members have a median ride length closer to 8–9 minutes. → This suggests casual riders tend to ride longer than members on average.
+
+**Interquartile Range (IQR):**
+
+-   Casual riders’ ride lengths are more spread out (wider IQR) — many rides last between 8 and 25 minutes.
+
+-   Members’ rides are more consistent, with most falling between 5 and 15 minutes.
+
+**Outliers:**
+
+-   Both groups have long-ride outliers extending above 60 minutes, but casual riders have more rides in the 30–60 min range.
+
+-   Members have some extreme rides too, but they’re less frequent.
+
+```{r average ride length by Riders in days, echo=FALSE}
+#print(avg_ride_lenght_days)
+kable(avg_ride_lenght_days,
+            digits = 2,
+            col.names = c("Rider Type", "Day of Week", "Avgerage Length"))
+```
+
+```{r viz5}
+      avg_ride_lenght_days %>% 
+        ggplot(mapping = aes(day_of_week, avg_length, fill = rider_type)) +
+        geom_bar(stat = "identity", position = "dodge") +
+        facet_wrap(vars(rider_type)) +
+        geom_text(aes(label = avg_length), 
+                  position = position_dodge(width = 0.9), 
+                  vjust = -0.8, size = 3)  +
+        labs(
+          title = "Average Ride Legnth over the week by Riders",
+          subtitle = "data from Cyclistic Bike Share 2022 (Q1, Q2, Q3)",
+          x = "",
+          y = "Average Ride Legnth",
+          fill = "Rider") +
+        theme(axis.text.x = element_text(angle = 90),
+              plot.subtitle = element_text(size = 10))
+```
+
+**Interpretation :**
+-   The chart shows that casual riders consistently record longer average ride times than annual members across all days of the week.
+
+-   Casual riders’ ride lengths peak during weekends (Saturday and Sunday), suggesting leisure or recreational use.
+
+-   Annual members maintain relatively stable and shorter ride lengths, with small variations across weekdays, indicating routine commuting or short trips.
+
+```{r Segm_Riders_byRlegnth, echo=FALSE}
+#print(Segm_Riders_byRlegnth)
+kable(Segm_Riders_byRlegnth,
+            digits = 2,
+            col.names = c("Rider Type", "Length Category", "Number of Riders"))
+
+```
+
+# Insights and Business Recommendations
+
+**Key Insights:**
+-   Usage pattern difference: Casual riders use bikes for longer and less frequent leisure trips, while members ride shorter but more regular trips.
+
+-   Weekend vs. Weekday: Casual usage intensifies on weekends, while members’ usage is more evenly spread across weekdays.
+
+-   Value opportunity: Longer rides by casual users signal interest in leisure, tourism, and occasional exploration.
+
+**Recommendations:**
+
+-   Target casual riders with membership offers linked to weekend and leisure benefits (e.g., “Weekend Unlimited Ride Upgrade” campaigns).
+
+-   Promote memberships during summer when casual ridership spikes, highlighting cost savings for frequent riders.
+
+-   Enhance weekend services (availability of electric bikes, promotional partnerships with leisure spots) to appeal to casual riders.
+
+-   Position annual membership as the smarter choice for those who ride more than a few times per month, emphasizing savings over long-term casual use.
+
+<!-- -->
+# Summary
+
+This analysis of Cyclistic bike-share data reveals clear behavioral differences between annual members and casual riders.
+
+Casual riders take longer trips, especially on weekends, aligning with leisure and recreational use.
+
+Annual members ride more frequently, with shorter and consistent durations, reflecting commuting or routine travel.
+
+From a business perspective, these findings highlight the opportunity to convert casual riders into members by tailoring promotions around their habits—particularly leisure-oriented and seasonal campaigns. Strengthening this conversion strategy can help Cyclistic increase long-term membership revenue and optimize bike distribution across different user groups.
+
+\
+\
