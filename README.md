@@ -1,4 +1,4 @@
-# Cyclistic Bike-Share — README
+# Cyclistic Bike-Share
 ## Project overview
 Analyze differences in usage between annual members and casual riders to identify actions that increase membership conversion and improve fleet operations.
 
